@@ -1,0 +1,95 @@
+name: Build Deb packages
+run-name: "PostgreSQL: ${{ inputs.pg-version }}. Tag: ${{ inputs.tag }}. Branch: ${{ github.ref_name }}"
+on:
+  workflow_dispatch:
+    inputs:
+      pg-version:
+        description: Target PostgreSQL version
+        type: choice
+        required: true
+        options:
+          - '17'
+          - '16'
+          - '15'
+      tag:
+        description: Tag name to be created for deb packages upload to
+        type: string
+        required: true
+      patch-source-repo:
+        description: Repository with patches to be applied to PostgreSQL source code
+        type: string
+        default: 'https://github.com/Netcracker/postgres-patches.git'
+      patch-source-branch:
+        description: Branch with patches to be applied to PostgreSQL source code
+        type: string
+        default: 'main'
+      patch-source-dir:
+        description: Directory with patches to be applied to PostgreSQL source code
+        type: string
+        default: 'postgres-patches/patches-17'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: 'REL_${{ inputs.pg-version }}_STABLE'
+      - name: "Get Debian scripts and patches"
+        run: |
+          echo "::group::Get Debian scripts"
+          echo "[DEBUG]: Getting Debian scripts for PostgreSQL ${{ inputs.pg-version }}"
+          mkdir -p ${GITHUB_WORKSPACE}/deb && cd ${GITHUB_WORKSPACE}/deb
+          git clone https://salsa.debian.org/postgresql/postgresql.git
+          cd postgresql
+          git checkout ${{ inputs.pg-version }}
+          echo "::endgroup::"
+          echo "::group::Get PostgreSQL patches"
+          cd ${GITHUB_WORKSPACE}
+          mkdir -p ${GITHUB_WORKSPACE}/pg-patches
+          git clone ${{ inputs.patch-source-repo }} pg-patches
+          cd pg-patches
+          git checkout ${{ inputs.patch-source-branch }}
+          cp --update=none -r ${GITHUB_WORKSPACE}/pg-patches/${{ inputs.patch-source-dir }}/* ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches
+          ls -la ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches
+          echo "[DEBUG]: Original ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches/series"
+          cat ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches/series
+          cat ${GITHUB_WORKSPACE}/pg-patches/${{ inputs.patch-source-dir }}/series >> ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches/series
+          echo "[DEBUG]: Modified ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches/series"
+          cat ${GITHUB_WORKSPACE}/deb/postgresql/debian/patches/series
+          echo "::endgroup::"
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --fix-missing flex bison libicu-dev libperl-dev tcl krb5-multidev \
+          debhelper-compat dh-exec docbook-xsl gdb gettext dpkg-dev \
+          libio-pty-perl libipc-run-perl libkrb5-dev libldap2-dev libpam-dev \
+          libreadline-dev libselinux1-dev libssl-dev libsystemd-dev build-essential \
+          libxml2-dev libxml2-utils libxslt1-dev pkg-config clang llvm-dev \
+          python3-dev systemtap-sdt-dev tcl-dev uuid-dev xsltproc libz-dev
+      - name: "Build PostgreSQL deb packages"
+        run: |
+          echo "::group::Build deb packages"
+          cd ${GITHUB_WORKSPACE}
+          cp ${GITHUB_WORKSPACE}/deb/postgresql/debian ${GITHUB_WORKSPACE} -rf
+          dpkg-buildpackage -rfakeroot -b -uc -us
+          echo "::endgroup::"
+          echo "distribution_root=$(realpath ${GITHUB_WORKSPACE}/../)" >> $GITHUB_ENV
+      - name: Create a New Tag
+        uses: netcracker/qubership-workflow-hub/actions/tag-action@main
+        with:
+          ref: ${{ github.ref_name }}
+          tag-name: ${{ inputs.tag }}
+          force-create: ${{ inputs.forceCreate }}
+          switch-to-tag: true
+          create-release: true
+          skip-checkout: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Upload assets"
+        uses: netcracker/qubership-workflow-hub/actions/assets-action@main
+        with:
+          tag: ${{ inputs.tag }}
+          item-path: ${{ env.distribution_root }}/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
