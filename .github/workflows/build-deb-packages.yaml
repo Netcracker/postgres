@@ -18,7 +18,7 @@ on:
       patch-source-repo:
         description: Repository with patches to be applied to PostgreSQL source code
         type: string
-        default: 'https://github.com/Netcracker/qubership-hub-test.git'
+        default: 'https://github.com/Netcracker/postgres-patches.git'
       patch-source-branch:
         description: Branch with patches to be applied to PostgreSQL source code
         type: string
