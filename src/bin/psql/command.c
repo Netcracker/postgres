@@ -67,8 +67,8 @@ static backslashResult exec_command_C(PsqlScanState scan_state, bool active_bran
 static backslashResult exec_command_connect(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_cd(PsqlScanState scan_state, bool active_branch,
 									   const char *cmd);
-static backslashResult exec_command_close(PsqlScanState scan_state, bool active_branch,
-										  const char *cmd);
+static backslashResult exec_command_close_prepared(PsqlScanState scan_state,
+												   bool active_branch, const char *cmd);
 static backslashResult exec_command_conninfo(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_copy(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_copyright(PsqlScanState scan_state, bool active_branch);
@@ -330,8 +330,8 @@ exec_command(const char *cmd,
 		status = exec_command_connect(scan_state, active_branch);
 	else if (strcmp(cmd, "cd") == 0)
 		status = exec_command_cd(scan_state, active_branch, cmd);
-	else if (strcmp(cmd, "close") == 0)
-		status = exec_command_close(scan_state, active_branch, cmd);
+	else if (strcmp(cmd, "close_prepared") == 0)
+		status = exec_command_close_prepared(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "conninfo") == 0)
 		status = exec_command_conninfo(scan_state, active_branch);
 	else if (pg_strcasecmp(cmd, "copy") == 0)
@@ -728,10 +728,10 @@ exec_command_cd(PsqlScanState scan_state, bool active_branch, const char *cmd)
 }
 
 /*
- * \close -- close a previously prepared statement
+ * \close_prepared -- close a previously prepared statement
  */
 static backslashResult
-exec_command_close(PsqlScanState scan_state, bool active_branch, const char *cmd)
+exec_command_close_prepared(PsqlScanState scan_state, bool active_branch, const char *cmd)
 {
 	backslashResult status = PSQL_CMD_SKIP_LINE;
 
@@ -4480,6 +4480,7 @@ SyncVariables(void)
 {
 	char		vbuf[32];
 	const char *server_version;
+	char	   *service_name;
 
 	/* get stuff from connection */
 	pset.encoding = PQclientEncoding(pset.db);
@@ -4489,11 +4490,15 @@ SyncVariables(void)
 	setFmtEncoding(pset.encoding);
 
 	SetVariable(pset.vars, "DBNAME", PQdb(pset.db));
-	SetVariable(pset.vars, "SERVICE", PQservice(pset.db));
 	SetVariable(pset.vars, "USER", PQuser(pset.db));
 	SetVariable(pset.vars, "HOST", PQhost(pset.db));
 	SetVariable(pset.vars, "PORT", PQport(pset.db));
 	SetVariable(pset.vars, "ENCODING", pg_encoding_to_char(pset.encoding));
+
+	service_name = get_conninfo_value("service");
+	SetVariable(pset.vars, "SERVICE", service_name);
+	if (service_name)
+		pg_free(service_name);
 
 	/* this bit should match connection_warnings(): */
 	/* Try to get full text form of version, might include "devel" etc */

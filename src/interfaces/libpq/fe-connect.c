@@ -2141,7 +2141,7 @@ pqConnectOptions2(PGconn *conn)
 	if (conn->min_pversion > conn->max_pversion)
 	{
 		conn->status = CONNECTION_BAD;
-		libpq_append_conn_error(conn, "min_protocol_version is greater than max_protocol_version");
+		libpq_append_conn_error(conn, "\"%s\" is greater than \"%s\"", "min_protocol_version", "max_protocol_version");
 		return false;
 	}
 
@@ -7459,14 +7459,6 @@ PQdb(const PGconn *conn)
 	if (!conn)
 		return NULL;
 	return conn->dbName;
-}
-
-char *
-PQservice(const PGconn *conn)
-{
-	if (!conn)
-		return NULL;
-	return conn->pgservice;
 }
 
 char *

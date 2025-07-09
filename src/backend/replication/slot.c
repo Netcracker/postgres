@@ -1591,8 +1591,8 @@ ReportSlotInvalidation(ReplicationSlotInvalidationCause cause,
 				uint64		ex = oldestLSN - restart_lsn;
 
 				appendStringInfo(&err_detail,
-								 ngettext("The slot's restart_lsn %X/%X exceeds the limit by %" PRIu64 " byte.",
-										  "The slot's restart_lsn %X/%X exceeds the limit by %" PRIu64 " bytes.",
+								 ngettext("The slot's restart_lsn %X/%08X exceeds the limit by %" PRIu64 " byte.",
+										  "The slot's restart_lsn %X/%08X exceeds the limit by %" PRIu64 " bytes.",
 										  ex),
 								 LSN_FORMAT_ARGS(restart_lsn),
 								 ex);
@@ -1809,8 +1809,6 @@ InvalidatePossiblyObsoleteSlot(uint32 possible_causes,
 		 * forward, or the slot could be dropped.
 		 */
 		SpinLockAcquire(&s->mutex);
-
-		Assert(s->data.restart_lsn >= s->last_saved_restart_lsn);
 
 		restart_lsn = s->data.restart_lsn;
 
@@ -2081,6 +2079,7 @@ void
 CheckPointReplicationSlots(bool is_shutdown)
 {
 	int			i;
+	bool		last_saved_restart_lsn_updated = false;
 
 	elog(DEBUG1, "performing replication slot checkpoint");
 
@@ -2125,15 +2124,23 @@ CheckPointReplicationSlots(bool is_shutdown)
 			SpinLockRelease(&s->mutex);
 		}
 
+		/*
+		 * Track if we're going to update slot's last_saved_restart_lsn. We
+		 * need this to know if we need to recompute the required LSN.
+		 */
+		if (s->last_saved_restart_lsn != s->data.restart_lsn)
+			last_saved_restart_lsn_updated = true;
+
 		SaveSlotToPath(s, path, LOG);
 	}
 	LWLockRelease(ReplicationSlotAllocationLock);
 
 	/*
-	 * Recompute the required LSN as SaveSlotToPath() updated
-	 * last_saved_restart_lsn for slots.
+	 * Recompute the required LSN if SaveSlotToPath() updated
+	 * last_saved_restart_lsn for any slot.
 	 */
-	ReplicationSlotsComputeRequiredLSN();
+	if (last_saved_restart_lsn_updated)
+		ReplicationSlotsComputeRequiredLSN();
 }
 
 /*
